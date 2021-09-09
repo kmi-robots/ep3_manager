@@ -1,7 +1,7 @@
 import rospy
 from geometry_msgs.msg import Pose, PoseStamped
 
-pose_pub = rospy.Subscriber('/move_base_simple/goal', PoseStamped)
+pose_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped)
 
 def main():
     rospy.init_node('pose_converter')
