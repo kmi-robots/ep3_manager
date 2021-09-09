@@ -2,19 +2,20 @@
 import rospy
 from std_msgs.msg import Int8
 from trajectory_msgs.msg import JointTrajectory
-from geometry_msgs.msg import Twist, Pose
+from geometry_msgs.msg import Twist, PoseStamped
 from ar_track_alvar_msgs.msg import AlvarMarkers
+import planar as pl
 
 class CartManager():
 
     def __init__(self):
-        self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
-        self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command trajectory_msgs", \
-                                           JointTrajectory)
-        self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist)
-        self.tag_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.tag_callback)
-        self.pose_pub = rospy.Publisher('/cart_pose', Pose)
 
+        self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command trajectory_msgs", JointTrajectory)
+        self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist)
+        self.pose_pub = rospy.Publisher('/cart_pose', PoseStamped)
+        self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
+        self.robot_sub = rospy.Subscriber("/robot_pose", PoseStamped, self.pose_callback)
+        self.tag_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.tag_callback)
         self.mode = 0
         self.mode_saved = False
         self.rate = rospy.Rate(1)
@@ -35,12 +36,11 @@ class CartManager():
                 # Go back
                 self.go_back()
 
-                # TODO reset arm position
+                # TODO change arm position
 
-                # TODO catch AR tag
+                rospy.loginfo("Move arm position")
+                rospy.loginfo("")
 
-                # TODO publish robot pose
-                continue
             elif self.mode ==2:
                 continue
 
@@ -51,8 +51,27 @@ class CartManager():
         self.mode = int_msg
         self.mode_saved = True
 
+    def pose_callback(self, pose_msg):
+        self.rb_pose = pose_msg
+
     def tag_callback(self, tag_msg):
-        
+        #From captured tag to cart pose
+        pose_msg_st = PoseStamped()
+        pose_msg_st.header.frame_id = 'base_footprint'
+
+        all_markers = tag_msg.markers
+        for m_msg in all_markers:
+            tag_id = m_msg.id
+            pose_msg_st.pose = m_msg.pose.pose
+
+            if tag_id == 4 or tag_id==5: #manico or front of cart
+
+                self.pose_pub.publish(pose_msg_st)
+
+            elif tag_id == 2: #cart side right
+                pass
+            elif tag_id == 0: #cart side left
+                pass
 
     def go_back(self):
         end_time = rospy.Time.now() + rospy.Duration(2)
@@ -61,7 +80,6 @@ class CartManager():
         while rospy.Time.now() < end_time: #keep doing for 2 sec
             self.base_pub.publish(twist_msg)
             rospy.sleep(0.1)
-
 
 def main():
     rospy.init_node('tiago_server')
