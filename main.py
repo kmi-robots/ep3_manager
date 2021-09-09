@@ -2,7 +2,8 @@
 import rospy
 from std_msgs.msg import Int8
 from trajectory_msgs.msg import JointTrajectory
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Pose
+from ar_track_alvar_msgs.msg import AlvarMarkers
 
 class CartManager():
 
@@ -11,6 +12,9 @@ class CartManager():
         self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command trajectory_msgs", \
                                            JointTrajectory)
         self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist)
+        self.tag_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.tag_callback)
+        self.pose_pub = rospy.Publisher('/cart_pose', Pose)
+
         self.mode = 0
         self.mode_saved = False
         self.rate = rospy.Rate(1)
@@ -46,6 +50,9 @@ class CartManager():
         if self.mode_saved: return
         self.mode = int_msg
         self.mode_saved = True
+
+    def tag_callback(self, tag_msg):
+        
 
     def go_back(self):
         end_time = rospy.Time.now() + rospy.Duration(2)
