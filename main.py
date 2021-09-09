@@ -2,8 +2,9 @@
 import rospy
 from std_msgs.msg import Int8
 from trajectory_msgs.msg import JointTrajectory
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PoseStamped, Pose, Pose2D
 from ar_track_alvar_msgs.msg import AlvarMarkers
+import numpy as np
 import planar as pl
 
 class CartManager():
@@ -12,9 +13,10 @@ class CartManager():
 
         self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command trajectory_msgs", JointTrajectory)
         self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist)
-        self.pose_pub = rospy.Publisher('/cart_pose', PoseStamped)
+        self.pose_pub = rospy.Publisher("/cart_pose", Pose2D)
         self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
-        self.robot_sub = rospy.Subscriber("/robot_pose", PoseStamped, self.pose_callback)
+        self.pose_sub = rospy.Subscriber('/move_base_simple/pose', Pose, self.conv_callback)
+        self.pose_conv_pub = rospy.Publisher('/move_base_simple/goal', Pose)
         self.tag_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.tag_callback)
         self.mode = 0
         self.mode_saved = False
@@ -51,8 +53,11 @@ class CartManager():
         self.mode = int_msg
         self.mode_saved = True
 
-    def pose_callback(self, pose_msg):
-        self.rb_pose = pose_msg
+    def conv_callback(self, pose_msg):
+        pose_msg_st = PoseStamped()
+        pose_msg_st.header.frame_id = 'base_footprint'
+        pose_msg_st.pose = pose_msg.pose
+        self.pose_conv_pub.publish(pose_msg_st)
 
     def tag_callback(self, tag_msg):
         #From captured tag to cart pose
@@ -63,15 +68,27 @@ class CartManager():
         for m_msg in all_markers:
             tag_id = m_msg.id
             pose_msg_st.pose = m_msg.pose.pose
-
             if tag_id == 4 or tag_id==5: #manico or front of cart
-
-                self.pose_pub.publish(pose_msg_st)
-
+                vec1 = np.array(0., 0.,1., 0.)
+                vec2 = np.array(0.,0., m_msg.position.x, m_msg.position.y)
             elif tag_id == 2: #cart side right
-                pass
+                vec1 = []
+                vec2 = []
             elif tag_id == 0: #cart side left
-                pass
+                vec1= []
+                vec2 = []
+            th = self.calc_angle(vec1,vec2)
+
+            pose_msg_st.pose.x = m_msg.position.x
+            pose_msg_st.pose.y = m_msg.position.y
+            pose_msg_st.pose.theta = th
+
+            self.pose_pub.publish(pose_msg_st)
+
+    def calc_angle(self, vA,vB):
+        num = np.dot(vA,vB)
+        denom = np.linalg.norm(vA)*np.linalg.norm(vB)
+        return np.arccos(num / denom) #angle in radiants
 
     def go_back(self):
         end_time = rospy.Time.now() + rospy.Duration(2)
