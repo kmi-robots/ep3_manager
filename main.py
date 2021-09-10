@@ -12,7 +12,7 @@ class CartManager():
     def __init__(self):
 
         self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command", JointTrajectory, queue_size=5, latch=True)
-        self.head_pub = rospy.Publisher('/head_controller/point_head_action/goal', PointHeadActionGoal, queue_size=1)
+        self.head_pub = rospy.Publisher('/head_controller/point_head_action/goal', PointHeadActionGoal, queue_size=1, latch=True)
         self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist, queue_size=5)
         self.pose_pub = rospy.Publisher("/cart_pose", Pose2D, queue_size=5)
         self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
@@ -46,12 +46,10 @@ class CartManager():
                 # TODO change arm position
 
                 rospy.loginfo("Move arm position")
-                rospy.loginfo("")
 
                 self.mode = 0
                 self.mode_saved = False
 
-            rospy.loginfo("sleep")
             self.rate.sleep()
 
     def callback(self, int_msg):
@@ -73,7 +71,8 @@ class CartManager():
         all_markers = tag_msg.markers
         for m_msg in all_markers:
             tag_id = m_msg.id
-            if tag_id==5: #only look at the tag on front of cart
+            if tag_id==0: #only look at the tag on front of cart
+                rospy.loginfo("I see the cart front")
                 vec1 = [0., 0.,1., 0.]
                 vec2 = [0.,0., m_msg.pose.pose.position.x, m_msg.pose.pose.position.y]
                 th = self.calc_angle(vec1, vec2)
@@ -86,16 +85,17 @@ class CartManager():
 
                 #Keep looking at pub
                 pg = PointHeadActionGoal()
-                pg.header.frame_id = "/base_link"
+                pg.header.frame_id = "/base_footprint"
                 pg.goal.max_velocity = 1.0
                 pg.goal.min_duration = rospy.Duration(0.2)
-                pg.goal.target.header.frame_id = "/base_link"
+                pg.goal.target.header.frame_id = "/base_footprint"
                 pg.goal.pointing_axis.x = 1.0
-                pg.goal.pointing_frame = "/head_2_tag"
+                pg.goal.pointing_frame = "/head_2_link"
                 pg.goal.target.point.x = m_msg.pose.pose.position.x
                 pg.goal.target.point.y = m_msg.pose.pose.position.y
                 pg.goal.target.point.z = m_msg.pose.pose.position.z
 
+                rospy.loginfo("Follow with head")
                 self.head_pub.publish(pg)
 
     def calc_angle(self, vA,vB):
