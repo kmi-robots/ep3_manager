@@ -4,6 +4,7 @@ from std_msgs.msg import Int8
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from geometry_msgs.msg import Twist, PoseStamped, Pose, Pose2D
 from ar_track_alvar_msgs.msg import AlvarMarkers
+from control_msgs.msg import PointHeadActionGoal
 import numpy as np
 
 class CartManager():
@@ -11,6 +12,7 @@ class CartManager():
     def __init__(self):
 
         self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command", JointTrajectory, queue_size=5, latch=True)
+        self.head_pub = rospy.Publisher('/head_controller/point_head_action/goal', PointHeadActionGoal, queue_size=1)
         self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist, queue_size=5)
         self.pose_pub = rospy.Publisher("/cart_pose", Pose2D, queue_size=5)
         self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
@@ -23,9 +25,10 @@ class CartManager():
 
     def run(self):
         while not rospy.is_shutdown():
+
             if self.mode == 0: # do nothing
                 pass
-            if self.mode == 1: # straight done, turn
+            elif self.mode == 1: # straight done, turn
                 rospy.loginfo("Mode is %s" % str(self.mode))
                 #Open gripper
                 joint_msg = JointTrajectory()
@@ -38,7 +41,7 @@ class CartManager():
                 rospy.loginfo("Published grip open command")
 
                 # Go back
-                self.go_back()
+                # self.go_back()
 
                 # TODO change arm position
 
@@ -47,11 +50,6 @@ class CartManager():
 
                 self.mode = 0
                 self.mode_saved = False
-
-            elif self.mode == 2:
-                self.mode = 0
-                self.mode_saved = False
-                pass
 
             rospy.loginfo("sleep")
             self.rate.sleep()
@@ -75,7 +73,7 @@ class CartManager():
         all_markers = tag_msg.markers
         for m_msg in all_markers:
             tag_id = m_msg.id
-            if tag_id==5: #manico or front of cart
+            if tag_id==5: #only look at the tag on front of cart
                 vec1 = [0., 0.,1., 0.]
                 vec2 = [0.,0., m_msg.pose.pose.position.x, m_msg.pose.pose.position.y]
                 th = self.calc_angle(vec1, vec2)
@@ -83,17 +81,22 @@ class CartManager():
                 pose_msg_st.x = m_msg.pose.pose.position.x
                 pose_msg_st.y = m_msg.pose.pose.position.y
                 pose_msg_st.theta = th
-                rospy.loginfo(pose_msg_st)
+                # rospy.loginfo(pose_msg_st)
                 self.pose_pub.publish(pose_msg_st)
-            elif tag_id == 2: #cart side right
-                vec1 = []
-                vec2 = []
-            elif tag_id == 0: #cart side left
-                vec1= []
-                vec2 = []
-            elif tag_id == 4:  # cart side right
-                vec1 = []
-                vec2 = []
+
+                #Keep looking at pub
+                pg = PointHeadActionGoal()
+                pg.header.frame_id = "/base_link"
+                pg.goal.max_velocity = 1.0
+                pg.goal.min_duration = rospy.Duration(0.2)
+                pg.goal.target.header.frame_id = "/base_link"
+                pg.goal.pointing_axis.x = 1.0
+                pg.goal.pointing_frame = "/head_2_tag"
+                pg.goal.target.point.x = m_msg.pose.pose.position.x
+                pg.goal.target.point.y = m_msg.pose.pose.position.y
+                pg.goal.target.point.z = m_msg.pose.pose.position.z
+
+                self.head_pub.publish(pg)
 
     def calc_angle(self, vA,vB):
         num = np.dot(vA,vB)
