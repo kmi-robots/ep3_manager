@@ -1,31 +1,39 @@
 #!/usr/bin/env python3
 import rospy
-from std_msgs.msg import Int8
+from std_msgs.msg import Int16
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from geometry_msgs.msg import Twist, PoseStamped, Pose, Pose2D
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from control_msgs.msg import PointHeadActionGoal
 import numpy as np
 
+
+waypoints = [(1.58, 0.094), (2.36, 0.094), (3.13, 0.094), (3.4, 0.117),
+    (3.6, 0.1), (3.89, 0.063), (4.08, 0.1), (4.26, -0.07), (4.5, -0.233),
+    (4.5, -0.5), (4.5, -0.7), (4.3, -1), (3.36, -1.08), (3.11, -0.8),
+    (2.25, -0.4), (1.43, -0.3), (0.77, -0.125), (0.36, -0.34), (0.178, -0.34),
+    (0.163, -1.3), (0.163, -1.8)]
+
 class CartManager():
 
     def __init__(self):
 
+        self.cnt = 0
         self.gripper_pub = rospy.Publisher("/parallel_gripper_controller/command", JointTrajectory, queue_size=5, latch=True)
         self.head_pub = rospy.Publisher('/head_controller/point_head_action/goal', PointHeadActionGoal, queue_size=1, latch=True)
         self.base_pub = rospy.Publisher("/mobile_base_controller/cmd_vel", Twist, queue_size=5)
         self.pose_pub = rospy.Publisher("/cart_pose", Pose2D, queue_size=5)
-        self.int_sub = rospy.Subscriber("/controller_mode", Int8, self.callback)
+        self.way_pub = rospy.Publisher("/cart_goal_position", Pose2D, queue_size=5, latch=True)
+        self.int_sub = rospy.Subscriber("/controller_mode", Int16, self.callback)
         self.pose_sub = rospy.Subscriber('/move_base_simple/pose', Pose, self.conv_callback)
         self.pose_conv_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=5)
         self.tag_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.tag_callback)
-        self.mode = 1
+        self.mode = 0
         self.mode_saved = False
         self.rate = rospy.Rate(1)
 
     def run(self):
         while not rospy.is_shutdown():
-
             if self.mode == 0: # do nothing
                 pass
             elif self.mode == 1: # straight done, turn
@@ -53,9 +61,23 @@ class CartManager():
             self.rate.sleep()
 
     def callback(self, int_msg):
-        if self.mode_saved: return
-        self.mode = int_msg
-        self.mode_saved = True
+        if int_msg.data ==0:
+            # rospy.loginfo("Sending current/last waypoint")
+            goal_pose = Pose2D()
+            goal_x, goal_y = waypoints[self.cnt]
+            goal_pose.x = goal_x
+            goal_pose.y = goal_y
+            self.way_pub.publish(goal_pose)
+
+        elif int_msg.data == 1:
+            # rospy.loginfo("I am ready for a new waypoint")
+            goal_pose = Pose2D()
+            goal_x, goal_y = waypoints[self.cnt]
+            goal_pose.x = goal_x
+            goal_pose.y = goal_y
+            self.way_pub.publish(goal_pose)
+            self.cnt += 1
+            # rospy.loginfo("Waypoint sent")
 
     def conv_callback(self, pose_msg):
         pose_msg_st = PoseStamped()
@@ -72,7 +94,7 @@ class CartManager():
         for m_msg in all_markers:
             tag_id = m_msg.id
             if tag_id==0: #only look at the tag on front of cart
-                rospy.loginfo("I see the cart front")
+                # rospy.loginfo("I see the cart front")
                 vec1 = [0., 0.,1., 0.]
                 vec2 = [0.,0., m_msg.pose.pose.position.x, m_msg.pose.pose.position.y]
                 th = self.calc_angle(vec1, vec2)
@@ -95,7 +117,7 @@ class CartManager():
                 pg.goal.target.point.y = m_msg.pose.pose.position.y
                 pg.goal.target.point.z = m_msg.pose.pose.position.z
 
-                rospy.loginfo("Follow with head")
+                # rospy.loginfo("Follow with head")
                 self.head_pub.publish(pg)
 
     def calc_angle(self, vA,vB):
@@ -110,7 +132,6 @@ class CartManager():
         while rospy.Time.now() < end_time: #keep doing for 2 sec
             self.base_pub.publish(twist_msg)
             rospy.sleep(0.1)
-
 
 def main():
     rospy.init_node('tiago_server')
